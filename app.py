@@ -1,11 +1,14 @@
-from flask import Flask, request, render_template_string
+from flask import Flask, requfrom flask import Flask, request, render_template_string
 import cv2
 import numpy as np
 import pytesseract
 import os
 
 app = Flask(__name__)
-pytesseract.pytesseract.tesseract_cmd = r'C:/Program Files/Tesseract-OCR/tesseract.exe'
+
+# Nếu chạy trên Render, không cần chỉ định đường dẫn Tesseract
+# Nếu chạy cục bộ trên Windows, bạn có thể bật dòng dưới:
+# pytesseract.pytesseract.tesseract_cmd = r'C:/Program Files/Tesseract-OCR/tesseract.exe'
 
 # Tạo thư mục lưu mẫu nếu chưa có
 os.makedirs('samples', exist_ok=True)
@@ -73,5 +76,7 @@ def upload():
 
     return render_template_string(HTML, result=result)
 
+# Khởi động Flask với cổng do Render cung cấp
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
