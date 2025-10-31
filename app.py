@@ -1,82 +1,75 @@
-from flask import Flask, request, render_template_string
-import cv2
-import numpy as np
-import pytesseract
+from flask import Flask, request, jsonify
 import os
+from datetime import datetime
+import cv2
+import pytesseract
+import numpy as np
+from PIL import Image
+import io
 
 app = Flask(__name__)
+UPLOAD_FOLDER = 'uploads'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Nếu chạy trên Render, không cần chỉ định đường dẫn Tesseract
-# Nếu chạy cục bộ trên Windows, bạn có thể bật dòng dưới:
-# pytesseract.pytesseract.tesseract_cmd = r'C:/Program Files/Tesseract-OCR/tesseract.exe'
+def extract_text(image_path):
+    img = cv2.imread(image_path)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    text = pytesseract.image_to_string(gray)
+    return text.strip()
 
-# Tạo thư mục lưu mẫu nếu chưa có
-os.makedirs('samples', exist_ok=True)
+def match_template(image_path, template_path):
+    try:
+        img = cv2.imread(image_path, 0)
+        template = cv2.imread(template_path, 0)
+        res = cv2.matchTemplate(img, template, cv2.TM_CCOEFF_NORMED)
+        threshold = 0.8
+        loc = np.where(res >= threshold)
+        return len(loc[0]) > 0
+    except:
+        return False
 
-# Giao diện HTML
-HTML = '''
-<h2>📸 Nhận dạng ký hiệu trên remote</h2>
-
-<h3>1. Tải ảnh mẫu</h3>
-<form method="POST" action="/upload_sample" enctype="multipart/form-data">
-    <input type="file" name="image">
-    <input type="submit" value="Upload Sample">
-</form>
-
-<h3>2. Tải ảnh mới để so sánh</h3>
-<form method="POST" action="/upload" enctype="multipart/form-data">
-    <input type="file" name="image">
-    <input type="submit" value="Upload & Compare">
-</form>
-
-{% if result %}
-<h3>Kết quả so sánh:</h3>
-<pre>{{ result }}</pre>
-{% endif %}
-'''
-
-# Route trang chủ
-@app.route('/')
-def index():
-    return render_template_string(HTML)
-
-# Route upload ảnh mẫu
 @app.route('/upload_sample', methods=['POST'])
 def upload_sample():
-    file = request.files['image']
-    img_bytes = file.read()
-    with open('samples/sample.jpg', 'wb') as f:
-        f.write(img_bytes)
-    return render_template_string(HTML, result="✅ Ảnh mẫu đã được lưu.")
+    image_data = request.data
+    filename = f'sample_{datetime.now().strftime("%Y%m%d_%H%M%S")}.jpg'
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    with open(filepath, 'wb') as f:
+        f.write(image_data)
+    return jsonify({'status': 'ok', 'message': 'Sample saved', 'filename': filename})
 
-# Route upload ảnh mới và so sánh
-@app.route('/upload', methods=['POST'])
-def upload():
-    file = request.files['image']
-    img_bytes = file.read()
-    npimg = np.frombuffer(img_bytes, np.uint8)
-    img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+@app.route('/upload_compare', methods=['POST'])
+def upload_compare():
+    image_data = request.data
+    filename = f'compare_{datetime.now().strftime("%Y%m%d_%H%M%S")}.jpg'
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    with open(filepath, 'wb') as f:
+        f.write(image_data)
 
-    # Xử lý ảnh mới
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1]
-    text_new = pytesseract.image_to_string(thresh)
+    try:
+        img = Image.open(io.BytesIO(image_data))
+        resolution = f'{img.width}x{img.height}'
+    except:
+        resolution = 'unknown'
 
-    # Đọc ảnh mẫu
-    if not os.path.exists('samples/sample.jpg'):
-        return render_template_string(HTML, result="❌ Chưa có ảnh mẫu để so sánh.")
+    text = extract_text(filepath)
+    has_cool = "cool" in text.lower()
 
-    sample_img = cv2.imread('samples/sample.jpg')
-    gray_sample = cv2.cvtColor(sample_img, cv2.COLOR_BGR2GRAY)
-    thresh_sample = cv2.threshold(gray_sample, 150, 255, cv2.THRESH_BINARY)[1]
-    text_sample = pytesseract.image_to_string(thresh_sample)
+    # Nếu bạn có ảnh mẫu, đặt tên là 'cool_icon.jpg' trong thư mục uploads
+    template_path = os.path.join(UPLOAD_FOLDER, 'cool_icon.jpg')
+    matched_icon = match_template(filepath, template_path) if os.path.exists(template_path) else None
 
-    # So sánh kết quả OCR
-    result = f"📌 Ảnh mẫu:\n{text_sample}\n\n📷 Ảnh mới:\n{text_new}"
+    return jsonify({
+        'status': 'ok',
+        'filename': filename,
+        'resolution': resolution,
+        'text_found': text,
+        'has_cool_text': has_cool,
+        'matched_icon': matched_icon
+    })
 
-    return render_template_string(HTML, result=result)
+@app.route('/')
+def index():
+    return 'ESP32-CAM Server is running!'
 
-# Khởi động Flask với cổng do Render cung cấp
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=5000)
