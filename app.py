@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify
 import os
 from datetime import datetime
 import cv2
@@ -14,17 +14,27 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 def extract_text(image_path):
     return "OCR đã tắt"
 
-# Hàm so khớp biểu tượng mẫu
-def match_template(image_path, template_path):
+# Hàm so khớp biểu tượng mẫu bằng ORB
+def match_template_orb(image_path, template_path):
     try:
-        img = cv2.imread(image_path, 0)
-        template = cv2.imread(template_path, 0)
-        res = cv2.matchTemplate(img, template, cv2.TM_CCOEFF_NORMED)
-        threshold = 0.8
-        loc = np.where(res >= threshold)
-        return len(loc[0]) > 0
+        img1 = cv2.imread(template_path, 0)  # ảnh mẫu
+        img2 = cv2.imread(image_path, 0)     # ảnh cần kiểm tra
+
+        orb = cv2.ORB_create()
+        kp1, des1 = orb.detectAndCompute(img1, None)
+        kp2, des2 = orb.detectAndCompute(img2, None)
+
+        if des1 is None or des2 is None:
+            return False
+
+        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        matches = bf.match(des1, des2)
+        matches = sorted(matches, key=lambda x: x.distance)
+
+        good_matches = [m for m in matches if m.distance < 50]
+        return len(good_matches) >= 10
     except Exception as e:
-        print(f"Lỗi khớp biểu tượng: {e}")
+        print(f"Lỗi ORB matching: {e}")
         return False
 
 # API nhận ảnh mẫu từ ESP32-CAM
@@ -53,10 +63,10 @@ def upload_compare():
         resolution = 'unknown'
 
     text = extract_text(filepath)
-    has_cool = False  # OCR đã tắt nên không kiểm tra chữ "cool"
+    has_cool = False  # OCR đã tắt
 
     template_path = os.path.join(UPLOAD_FOLDER, 'cool_icon.jpg')
-    matched_icon = match_template(filepath, template_path) if os.path.exists(template_path) else None
+    matched_icon = match_template_orb(filepath, template_path) if os.path.exists(template_path) else None
 
     return jsonify({
         'status': 'ok',
@@ -96,10 +106,10 @@ def upload_compare_form():
         resolution = 'unknown'
 
     text = extract_text(filepath)
-    has_cool = False  # OCR đã tắt nên không kiểm tra chữ "cool"
+    has_cool = False  # OCR đã tắt
 
     template_path = os.path.join(UPLOAD_FOLDER, 'cool_icon.jpg')
-    matched_icon = match_template(filepath, template_path) if os.path.exists(template_path) else None
+    matched_icon = match_template_orb(filepath, template_path) if os.path.exists(template_path) else None
 
     return f'''
     <h3>Kết quả xử lý ảnh:</h3>
