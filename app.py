@@ -17,8 +17,8 @@ def extract_text(image_path):
 # Hàm so khớp biểu tượng mẫu bằng ORB
 def match_template_orb(image_path, template_path):
     try:
-        img1 = cv2.imread(template_path, 0)  # ảnh mẫu
-        img2 = cv2.imread(image_path, 0)     # ảnh cần kiểm tra
+        img1 = cv2.imread(template_path, 0)
+        img2 = cv2.imread(image_path, 0)
 
         orb = cv2.ORB_create()
         kp1, des1 = orb.detectAndCompute(img1, None)
@@ -50,7 +50,7 @@ def match_all_templates(image_path):
             matched.append(filename)
     return matched
 
-# API nhận ảnh mẫu từ ESP32-CAM (tên tùy chọn)
+# API nhận ảnh mẫu từ ESP32-CAM
 @app.route('/upload_sample', methods=['POST'])
 def upload_sample():
     filename = request.args.get('filename')
@@ -62,6 +62,37 @@ def upload_sample():
         f.write(request.data)
     
     return jsonify({'status': 'ok', 'message': f'Đã lưu ảnh mẫu: {filename}'})
+
+# Giao diện web để gửi ảnh mẫu
+@app.route('/upload_sample_form')
+def upload_sample_form():
+    return '''
+    <h2>Gửi ảnh mẫu lên server</h2>
+    <form action="/upload_sample_form_post" method="post" enctype="multipart/form-data">
+        <input type="text" name="filename" placeholder="Tên ảnh mẫu (ví dụ: mode_Cool.jpg)" required><br><br>
+        <input type="file" name="file" accept="image/*" required><br><br>
+        <button type="submit">Gửi ảnh mẫu</button>
+    </form>
+    '''
+
+@app.route('/upload_sample_form_post', methods=['POST'])
+def upload_sample_form_post():
+    file = request.files.get('file')
+    filename = request.form.get('filename')
+    if not file or not filename:
+        return 'Thiếu ảnh hoặc tên ảnh mẫu.'
+
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    file.save(filepath)
+
+    return f'''
+    <h3>Đã lưu ảnh mẫu thành công!</h3>
+    <ul>
+        <li>Tên ảnh: {filename}</li>
+        <li>Đường dẫn: {filepath}</li>
+    </ul>
+    <a href="/upload_sample_form">Gửi ảnh khác</a>
+    '''
 
 # API nhận ảnh cần xử lý từ ESP32-CAM
 @app.route('/upload_compare', methods=['POST'])
@@ -79,7 +110,7 @@ def upload_compare():
         resolution = 'unknown'
 
     text = extract_text(filepath)
-    has_cool = False  # OCR đã tắt
+    has_cool = False
 
     matched_templates = match_all_templates(filepath)
 
@@ -92,7 +123,7 @@ def upload_compare():
         'matched_templates': matched_templates
     })
 
-# Giao diện web để tải ảnh lên
+# Giao diện web để tải ảnh kiểm tra
 @app.route('/upload_form')
 def upload_form():
     return '''
@@ -103,7 +134,6 @@ def upload_form():
     </form>
     '''
 
-# Xử lý ảnh từ form web
 @app.route('/upload_compare_form', methods=['POST'])
 def upload_compare_form():
     file = request.files.get('file')
@@ -121,10 +151,9 @@ def upload_compare_form():
         resolution = 'unknown'
 
     text = extract_text(filepath)
-    has_cool = False  # OCR đã tắt
+    has_cool = False
 
     matched_templates = match_all_templates(filepath)
-
     matched_html = "<br>".join(matched_templates) if matched_templates else "Không khớp biểu tượng nào"
 
     return f'''
@@ -139,7 +168,21 @@ def upload_compare_form():
     <a href="/upload_form">Tải ảnh khác</a>
     '''
 
-# API kiểm tra ảnh đã upload
+# Giao diện web xem danh sách ảnh đã upload
+@app.route('/list_uploads_html')
+def list_uploads_html():
+    try:
+        files = os.listdir(UPLOAD_FOLDER)
+        images = [f for f in files if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+        html = "<h2>Danh sách ảnh đã upload:</h2><ul>"
+        for img in images:
+            html += f'<li>{img}</li>'
+        html += "</ul><a href='/'>Trang chủ</a>"
+        return html
+    except Exception as e:
+        return f"Lỗi: {str(e)}"
+
+# API JSON kiểm tra ảnh đã upload
 @app.route('/list_uploads', methods=['GET'])
 def list_uploads():
     try:
@@ -152,9 +195,16 @@ def list_uploads():
 # Trang chủ đơn giản
 @app.route('/')
 def index():
-    return 'ESP32-CAM Server is running!'
+    return '''
+    <h2>ESP32-CAM Server is running!</h2>
+    <ul>
+        <li><a href="/upload_form">Gửi ảnh kiểm tra</a></li>
+        <li><a href="/upload_sample_form">Gửi ảnh mẫu</a></li>
+        <li><a href="/list_uploads_html">Xem ảnh đã upload</a></li>
+    </ul>
+    '''
 
-# Khởi chạy server (tương thích Render)
+# Khởi chạy server
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
