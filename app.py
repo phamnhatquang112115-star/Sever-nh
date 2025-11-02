@@ -1,8 +1,7 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 import os
 from datetime import datetime
 import cv2
-import pytesseract
 import numpy as np
 from PIL import Image
 import io
@@ -11,12 +10,9 @@ app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Hàm trích xuất văn bản từ ảnh
+# Hàm trích xuất văn bản từ ảnh (OCR đã tắt)
 def extract_text(image_path):
-    img = cv2.imread(image_path)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    text = pytesseract.image_to_string(gray)
-    return text.strip()
+    return "OCR đã tắt"
 
 # Hàm so khớp biểu tượng mẫu
 def match_template(image_path, template_path):
@@ -27,18 +23,19 @@ def match_template(image_path, template_path):
         threshold = 0.8
         loc = np.where(res >= threshold)
         return len(loc[0]) > 0
-    except:
+    except Exception as e:
+        print(f"Lỗi khớp biểu tượng: {e}")
         return False
 
 # API nhận ảnh mẫu từ ESP32-CAM
 @app.route('/upload_sample', methods=['POST'])
 def upload_sample():
     image_data = request.data
-    filename = f'sample_{datetime.now().strftime("%Y%m%d_%H%M%S")}.jpg'
+    filename = 'cool_icon.jpg'
     filepath = os.path.join(UPLOAD_FOLDER, filename)
     with open(filepath, 'wb') as f:
         f.write(image_data)
-    return jsonify({'status': 'ok', 'message': 'Sample saved', 'filename': filename})
+    return jsonify({'status': 'ok', 'message': 'Ảnh mẫu đã lưu', 'filename': filename})
 
 # API nhận ảnh cần xử lý từ ESP32-CAM
 @app.route('/upload_compare', methods=['POST'])
@@ -56,7 +53,7 @@ def upload_compare():
         resolution = 'unknown'
 
     text = extract_text(filepath)
-    has_cool = "cool" in text.lower()
+    has_cool = False  # OCR đã tắt nên không kiểm tra chữ "cool"
 
     template_path = os.path.join(UPLOAD_FOLDER, 'cool_icon.jpg')
     matched_icon = match_template(filepath, template_path) if os.path.exists(template_path) else None
@@ -99,7 +96,7 @@ def upload_compare_form():
         resolution = 'unknown'
 
     text = extract_text(filepath)
-    has_cool = "cool" in text.lower()
+    has_cool = False  # OCR đã tắt nên không kiểm tra chữ "cool"
 
     template_path = os.path.join(UPLOAD_FOLDER, 'cool_icon.jpg')
     matched_icon = match_template(filepath, template_path) if os.path.exists(template_path) else None
@@ -116,11 +113,22 @@ def upload_compare_form():
     <a href="/upload_form">Tải ảnh khác</a>
     '''
 
+# API kiểm tra ảnh đã upload
+@app.route('/list_uploads', methods=['GET'])
+def list_uploads():
+    try:
+        files = os.listdir(UPLOAD_FOLDER)
+        images = [f for f in files if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+        return jsonify({'status': 'ok', 'images': images})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+
 # Trang chủ đơn giản
 @app.route('/')
 def index():
     return 'ESP32-CAM Server is running!'
 
-# Khởi chạy server
+# Khởi chạy server (tương thích Render)
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
