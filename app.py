@@ -25,6 +25,7 @@ def match_template_orb(image_path, template_path):
         kp2, des2 = orb.detectAndCompute(img2, None)
 
         if des1 is None or des2 is None:
+            print(f"Không tìm thấy đặc trưng trong {template_path}")
             return False
 
         bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
@@ -32,9 +33,10 @@ def match_template_orb(image_path, template_path):
         matches = sorted(matches, key=lambda x: x.distance)
 
         good_matches = [m for m in matches if m.distance < 50]
+        print(f"Số điểm khớp tốt với {template_path}: {len(good_matches)}")
         return len(good_matches) >= 10
     except Exception as e:
-        print(f"Lỗi ORB matching: {e}")
+        print(f"Lỗi ORB matching với {template_path}: {e}")
         return False
 
 # Hàm so khớp với tất cả ảnh mẫu đã lưu
