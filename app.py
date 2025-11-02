@@ -37,15 +37,29 @@ def match_template_orb(image_path, template_path):
         print(f"Lỗi ORB matching: {e}")
         return False
 
-# API nhận ảnh mẫu từ ESP32-CAM
+# Hàm so khớp với tất cả ảnh mẫu đã lưu
+def match_all_templates(image_path):
+    matched = []
+    for filename in os.listdir(UPLOAD_FOLDER):
+        if filename.startswith("compare_") or not filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+            continue
+        template_path = os.path.join(UPLOAD_FOLDER, filename)
+        if match_template_orb(image_path, template_path):
+            matched.append(filename)
+    return matched
+
+# API nhận ảnh mẫu từ ESP32-CAM (tên tùy chọn)
 @app.route('/upload_sample', methods=['POST'])
 def upload_sample():
-    image_data = request.data
-    filename = 'cool_icon.jpg'
+    filename = request.args.get('filename')
+    if not filename:
+        return jsonify({'status': 'error', 'message': 'Thiếu tên ảnh mẫu (filename)'})
+    
     filepath = os.path.join(UPLOAD_FOLDER, filename)
     with open(filepath, 'wb') as f:
-        f.write(image_data)
-    return jsonify({'status': 'ok', 'message': 'Ảnh mẫu đã lưu', 'filename': filename})
+        f.write(request.data)
+    
+    return jsonify({'status': 'ok', 'message': f'Đã lưu ảnh mẫu: {filename}'})
 
 # API nhận ảnh cần xử lý từ ESP32-CAM
 @app.route('/upload_compare', methods=['POST'])
@@ -65,8 +79,7 @@ def upload_compare():
     text = extract_text(filepath)
     has_cool = False  # OCR đã tắt
 
-    template_path = os.path.join(UPLOAD_FOLDER, 'cool_icon.jpg')
-    matched_icon = match_template_orb(filepath, template_path) if os.path.exists(template_path) else None
+    matched_templates = match_all_templates(filepath)
 
     return jsonify({
         'status': 'ok',
@@ -74,7 +87,7 @@ def upload_compare():
         'resolution': resolution,
         'text_found': text,
         'has_cool_text': has_cool,
-        'matched_icon': matched_icon
+        'matched_templates': matched_templates
     })
 
 # Giao diện web để tải ảnh lên
@@ -108,8 +121,9 @@ def upload_compare_form():
     text = extract_text(filepath)
     has_cool = False  # OCR đã tắt
 
-    template_path = os.path.join(UPLOAD_FOLDER, 'cool_icon.jpg')
-    matched_icon = match_template_orb(filepath, template_path) if os.path.exists(template_path) else None
+    matched_templates = match_all_templates(filepath)
+
+    matched_html = "<br>".join(matched_templates) if matched_templates else "Không khớp biểu tượng nào"
 
     return f'''
     <h3>Kết quả xử lý ảnh:</h3>
@@ -118,7 +132,7 @@ def upload_compare_form():
         <li>Độ phân giải: {resolution}</li>
         <li>Văn bản tìm thấy: {text}</li>
         <li>Có chữ "cool": {has_cool}</li>
-        <li>Khớp biểu tượng mẫu: {matched_icon}</li>
+        <li>Biểu tượng khớp: <br>{matched_html}</li>
     </ul>
     <a href="/upload_form">Tải ảnh khác</a>
     '''
